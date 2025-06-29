@@ -12,3 +12,5 @@ textblob
 textstat
 scikit-learn
 plotly
+pypdf
+langchain-huggingface
