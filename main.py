@@ -2,7 +2,6 @@
 
 import streamlit as st
 from langchain_core.messages import AIMessage, HumanMessage
-# --- NEW: Import the 'datasets' library and LangChain's Document class ---
 from datasets import load_dataset
 from langchain_core.documents import Document
 from langchain.text_splitter import RecursiveCharacterTextSplitter
@@ -31,39 +30,37 @@ except (KeyError, FileNotFoundError):
 
 
 # --- Core Functions (with Caching) ---
-# --- THIS FUNCTION IS CORRECTED TO FIX THE TypeError ---
+# --- THIS FUNCTION IS CORRECTED TO FIX THE ValueError ---
 @st.cache_resource(show_spinner="Loading Data From Open-Source Medical Pool...")
 def get_vectorstore_from_hf_dataset():
     """
     Loads a slice of the 'ncbi/pubmed' dataset directly using the 'datasets' library,
     converts it to LangChain Documents, splits, embeds, and stores it in FAISS.
     """
-    # Load the first 200 rows of the 'train' split directly. This is the correct way.
-    dataset = load_dataset("ncbi/pubmed", split="train[:200]")
+    # Load the first 200 rows of the 'train' split directly.
+    # --- ADDED trust_remote_code=True TO FIX THE ERROR ---
+    dataset = load_dataset(
+        "ncbi/pubmed",
+        split="train[:200]",
+        trust_remote_code=True  # <-- THIS IS THE FIX
+    )
 
-    # Manually create LangChain Document objects, including metadata
+    # Manually create LangChain Document objects
     documents = []
     for entry in dataset:
-        # The main text content
         page_content = entry.get("article_text", "")
-        # Other columns become metadata, which is great for context
-        metadata = {
-            "pmid": entry.get("pmid", ""),
-            "journal": entry.get("journal", "")
-        }
+        metadata = {"pmid": entry.get("pmid", ""), "journal": entry.get("journal", "")}
         doc = Document(page_content=page_content, metadata=metadata)
         documents.append(doc)
 
-    # Now, proceed as before with the list of Document objects
+    # Proceed as before
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=150)
     chunked_docs = text_splitter.split_documents(documents)
 
-    # Create embeddings
     embeddings = HuggingFaceEmbeddings(
         model_name="sentence-transformers/all-MiniLM-L6-v2"
     )
-
-    # Create the vector store
+    
     vector_store = FAISS.from_documents(chunked_docs, embeddings)
     return vector_store
 
