@@ -13,8 +13,8 @@ from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain_huggingface import HuggingFaceEndpoint, HuggingFaceEmbeddings
 
 # --- App Configuration ---
-st.set_page_config(page_title="Health Chatbot", page_icon="🤖", layout="wide")
-st.title("🤖Health Chatbot")
+st.set_page_config(page_title="Factful Health Chatbot", page_icon="🤖", layout="wide")
+st.title("🤖 Factful Health Chatbot")
 st.markdown("""
 This chatbot is powered by a cloud-hosted, open-source LLM and provides answers based on data
 from a cloud-native PubMed dataset.
@@ -22,7 +22,7 @@ from a cloud-native PubMed dataset.
 **Disclaimer:** This is an informational tool and not a substitute for professional medical advice.
 """)
 
-# --- Load API Key AND Set Environment Variable (This is still correct and necessary) ---
+# --- Load API Key AND Set Environment Variable ---
 try:
     HF_TOKEN = st.secrets["HUGGINGFACEHUB_API_TOKEN"]
     os.environ["HUGGING_FACE_HUB_TOKEN"] = HF_TOKEN
@@ -35,25 +35,18 @@ except (KeyError, FileNotFoundError):
 @st.cache_resource(show_spinner="Loading Data From Cloud-Native Medical Pool...")
 def get_vectorstore_from_hf_dataset():
     """
-    Loads the user-provided, correct PubMed dataset from Hugging Face.
-    This is authenticated and will now work.
+    Loads a smaller, manageable slice of the dataset to fit within cloud memory limits.
     """
-    # --- THIS IS THE CORRECT, USER-PROVIDED DATASET NAME ---
     dataset_name = "armanc/pubmed-rct20k"
-
-    # Load the dataset (we can use the full train split, it's not too large)
     dataset = load_dataset(dataset_name, split="train[:1000]")
 
-    # Manually create LangChain Document objects
     documents = []
     for entry in dataset:
-        # For this dataset, the main text is in the 'text' column
         page_content = entry.get("text", "")
         metadata = {"source": dataset_name}
         doc = Document(page_content=page_content, metadata=metadata)
         documents.append(doc)
 
-    # Proceed with splitting and embedding
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=150)
     chunked_docs = text_splitter.split_documents(documents)
 
@@ -64,11 +57,14 @@ def get_vectorstore_from_hf_dataset():
     vector_store = FAISS.from_documents(chunked_docs, embeddings)
     return vector_store
 
-# --- The rest of your functions are the same ---
+# --- Functions with LLM instantiation are now fixed ---
 def get_llm():
+    """Returns an instance of the HuggingFaceEndpoint LLM with the correct task."""
     return HuggingFaceEndpoint(
         repo_id="google/gemma-2b-it",
-        temperature=0.1, max_new_tokens=1024
+        temperature=0.1,
+        max_new_tokens=1024,
+        task="conversational"  # <-- THIS IS THE FIX
     )
 
 def get_context_retriever_chain(_vector_store):
@@ -92,8 +88,12 @@ def get_conversational_rag_chain(retriever_chain):
     return create_retrieval_chain(retriever_chain, stuff_documents_chain)
 
 def get_health_classifier_chain():
+    """Creates the classifier chain with the correct task for the LLM."""
     llm = HuggingFaceEndpoint(
-        repo_id="google/gemma-2b-it", temperature=0.1, max_new_tokens=10
+        repo_id="google/gemma-2b-it",
+        temperature=0.1,
+        max_new_tokens=10,
+        task="conversational"  # <-- THIS IS THE FIX
     )
     prompt = ChatPromptTemplate.from_messages([
         ("system", "You are a highly skilled classifier... Respond with only 'yes' or 'no'."),
