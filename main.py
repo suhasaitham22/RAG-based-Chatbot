@@ -1,6 +1,4 @@
-# The content of this file is the same as the app.py from the previous step.
-# No major changes are needed here. Just make sure it uses st.session_state['chat_history'].
-# For completeness, here is the full code for this file.
+# filename: main.py
 
 import streamlit as st
 from langchain_core.messages import AIMessage, HumanMessage
@@ -14,7 +12,7 @@ from langchain_community.llms import HuggingFaceHub
 from langchain_community.embeddings import HuggingFaceInferenceAPIEmbeddings
 
 # --- App Configuration ---
-# Use st.set_page_config only once, at the start of your main script.
+# This should be the first Streamlit command in your app
 st.set_page_config(page_title="Factful Health Chatbot", page_icon="🤖", layout="wide")
 
 st.title("🤖 Factful Health Chatbot")
@@ -45,8 +43,6 @@ def get_vectorstore_from_urls(urls):
     )
     return FAISS.from_documents(chunked_docs, embeddings)
 
-# All other chain-creation functions (get_context_retriever_chain, etc.) are the same.
-# We'll define them here for completeness.
 def get_context_retriever_chain(_vector_store):
     llm = HuggingFaceHub(
         repo_id="google/gemma-2b-it", model_kwargs={"temperature": 0.1, "max_new_tokens": 1024}, huggingfacehub_api_token=HF_TOKEN
