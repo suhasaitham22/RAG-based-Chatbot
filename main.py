@@ -10,13 +10,15 @@ from langchain_community.vectorstores import FAISS
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain.chains import create_history_aware_retriever, create_retrieval_chain
 from langchain.chains.combine_documents import create_stuff_documents_chain
-from langchain_huggingface import HuggingFaceEndpoint, HuggingFaceEmbeddings
+
+# --- THIS IS THE CRITICAL CHANGE: IMPORT THE CORRECT CLASS ---
+from langchain_huggingface import ChatHuggingFace, HuggingFaceEmbeddings
 
 # --- App Configuration ---
 st.set_page_config(page_title="Factful Health Chatbot", page_icon="🤖", layout="wide")
 st.title("🤖 Factful Health Chatbot")
 st.markdown("""
-This chatbot is powered by the Mixtral model and provides answers based on data
+This chatbot is powered by Google's Gemma model and provides answers based on data
 from a cloud-native PubMed dataset.
 
 **Disclaimer:** This is an informational tool and not a substitute for professional medical advice.
@@ -57,14 +59,13 @@ def get_vectorstore_from_hf_dataset():
     vector_store = FAISS.from_documents(chunked_docs, embeddings)
     return vector_store
 
-# --- UPDATED LLM TO A MORE COMPATIBLE MODEL ---
+# --- UPDATED LLM TO USE THE CORRECT ChatHuggingFace CLASS ---
 def get_llm():
-    """Returns an instance of the HuggingFaceEndpoint LLM using the Mixtral model."""
-    return HuggingFaceEndpoint(
-        repo_id="mistralai/Mixtral-8x7B-Instruct-v0.1",
+    """Returns an instance of the ChatHuggingFace model."""
+    return ChatHuggingFace(
+        repo_id="google/gemma-2b-it",
         temperature=0.1,
         max_new_tokens=1024
-        # We REMOVE task="conversational" as this model works with the default task
     )
 
 def get_context_retriever_chain(_vector_store):
@@ -88,9 +89,9 @@ def get_conversational_rag_chain(retriever_chain):
     return create_retrieval_chain(retriever_chain, stuff_documents_chain)
 
 def get_health_classifier_chain():
-    """Creates the classifier chain with the compatible Mixtral model."""
-    llm = HuggingFaceEndpoint(
-        repo_id="mistralai/Mixtral-8x7B-Instruct-v0.1",
+    """Creates the classifier chain with the correct ChatHuggingFace class."""
+    llm = ChatHuggingFace(
+        repo_id="google/gemma-2b-it",
         temperature=0.1,
         max_new_tokens=10
     )
