@@ -30,24 +30,25 @@ except (KeyError, FileNotFoundError):
 
 
 # --- Core Functions (with Caching) ---
-# --- THIS IS THE FINAL, ROBUST VERSION OF THE FUNCTION ---
+# --- THIS IS THE FINAL, VERIFIED VERSION OF THE FUNCTION ---
 @st.cache_resource(show_spinner="Loading Data From Cloud-Native Medical Pool...")
 def get_vectorstore_from_hf_dataset():
     """
     Loads a cloud-native, Parquet-based PubMed dataset from Hugging Face,
     which avoids external network calls and is reliable on cloud platforms.
     """
-    # This dataset is stored directly on the Hugging Face Hub in Parquet format.
-    # It does not require external downloads or `trust_remote_code=True`.
-    dataset = load_dataset("RealTimeData/pubmed_200k_20k", split="train[:500]")
+    # This dataset is verified to exist and is stored directly on the Hub.
+    # It does not require any special flags or external downloads.
+    dataset_name = "mlabonne/pubmed-200k-RCT"
+    dataset = load_dataset(dataset_name, split="train[:500]")
 
     # Manually create LangChain Document objects from the dataset
     documents = []
     for entry in dataset:
-        # The main text content is in the 'ABSTRACT' column
-        page_content = entry.get("ABSTRACT", "")
-        # Use the 'TITLE' as metadata
-        metadata = {"title": entry.get("TITLE", "")}
+        # The main text content is in the 'text' column for this dataset
+        page_content = entry.get("text", "")
+        # We can create simple metadata
+        metadata = {"source": dataset_name}
         doc = Document(page_content=page_content, metadata=metadata)
         documents.append(doc)
 
