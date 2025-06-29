@@ -16,7 +16,7 @@ st.set_page_config(page_title="Factful Health Chatbot", page_icon="🤖", layout
 st.title("🤖 Factful Health Chatbot")
 st.markdown("""
 This chatbot is powered by a cloud-hosted, open-source LLM and provides answers based on data
-from the PubMed open-source medical dataset.
+from a cloud-native PubMed dataset.
 
 **Disclaimer:** This is an informational tool and not a substitute for professional medical advice.
 """)
@@ -30,30 +30,28 @@ except (KeyError, FileNotFoundError):
 
 
 # --- Core Functions (with Caching) ---
-# --- THIS FUNCTION IS CORRECTED TO FIX THE ValueError ---
-@st.cache_resource(show_spinner="Loading Data From Open-Source Medical Pool...")
+# --- THIS IS THE FINAL, ROBUST VERSION OF THE FUNCTION ---
+@st.cache_resource(show_spinner="Loading Data From Cloud-Native Medical Pool...")
 def get_vectorstore_from_hf_dataset():
     """
-    Loads a slice of the 'ncbi/pubmed' dataset directly using the 'datasets' library,
-    converts it to LangChain Documents, splits, embeds, and stores it in FAISS.
+    Loads a cloud-native, Parquet-based PubMed dataset from Hugging Face,
+    which avoids external network calls and is reliable on cloud platforms.
     """
-    # Load the first 200 rows of the 'train' split directly.
-    # --- ADDED trust_remote_code=True TO FIX THE ERROR ---
-    dataset = load_dataset(
-        "ncbi/pubmed",
-        split="train[:200]",
-        trust_remote_code=True  # <-- THIS IS THE FIX
-    )
+    # This dataset is stored directly on the Hugging Face Hub in Parquet format.
+    # It does not require external downloads or `trust_remote_code=True`.
+    dataset = load_dataset("RealTimeData/pubmed_200k_20k", split="train[:500]")
 
-    # Manually create LangChain Document objects
+    # Manually create LangChain Document objects from the dataset
     documents = []
     for entry in dataset:
-        page_content = entry.get("article_text", "")
-        metadata = {"pmid": entry.get("pmid", ""), "journal": entry.get("journal", "")}
+        # The main text content is in the 'ABSTRACT' column
+        page_content = entry.get("ABSTRACT", "")
+        # Use the 'TITLE' as metadata
+        metadata = {"title": entry.get("TITLE", "")}
         doc = Document(page_content=page_content, metadata=metadata)
         documents.append(doc)
 
-    # Proceed as before
+    # Proceed with splitting and embedding
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=150)
     chunked_docs = text_splitter.split_documents(documents)
 
@@ -64,7 +62,7 @@ def get_vectorstore_from_hf_dataset():
     vector_store = FAISS.from_documents(chunked_docs, embeddings)
     return vector_store
 
-# --- The rest of your functions are the same as before ---
+# --- The rest of your functions are the same ---
 def get_llm():
     return HuggingFaceEndpoint(
         repo_id="google/gemma-2b-it",
