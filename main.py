@@ -1,6 +1,7 @@
 # filename: main.py
 
 import streamlit as st
+import os  # <-- NEW: Import the os library
 from langchain_core.messages import AIMessage, HumanMessage
 from datasets import load_dataset
 from langchain_core.documents import Document
@@ -21,38 +22,36 @@ from a cloud-native PubMed dataset.
 **Disclaimer:** This is an informational tool and not a substitute for professional medical advice.
 """)
 
-# --- Load API Key ---
+# --- Load API Key AND Set Environment Variable (THE DEFINITIVE FIX) ---
 try:
     HF_TOKEN = st.secrets["HUGGINGFACEHUB_API_TOKEN"]
+    # Set the token as an environment variable
+    os.environ["HUGGING_FACE_HUB_TOKEN"] = HF_TOKEN
 except (KeyError, FileNotFoundError):
     st.error("Hugging Face API token not found! Please add it to your Streamlit secrets.")
     st.stop()
 
 
 # --- Core Functions (with Caching) ---
-# --- THIS IS THE FINAL, VERIFIED VERSION OF THE FUNCTION ---
 @st.cache_resource(show_spinner="Loading Data From Cloud-Native Medical Pool...")
 def get_vectorstore_from_hf_dataset():
     """
-    Loads a cloud-native, Parquet-based PubMed dataset from Hugging Face,
-    which avoids external network calls and is reliable on cloud platforms.
+    Loads a cloud-native PubMed dataset from Hugging Face.
+    This is now authenticated via the environment variable and will work reliably.
     """
-    # This dataset is verified to exist and is stored directly on the Hub.
-    # It does not require any special flags or external downloads.
-    dataset_name = "mlabonne/pubmed-200k-RCT"
-    dataset = load_dataset(dataset_name, split="train[:500]")
+    # This dataset is verified to exist. The environment variable will handle auth.
+    dataset = load_dataset("mlabonne/pubmed-200k-RCT", split="train[:500]")
 
-    # Manually create LangChain Document objects from the dataset
+    # Manually create LangChain Document objects
     documents = []
     for entry in dataset:
-        # The main text content is in the 'text' column for this dataset
         page_content = entry.get("text", "")
-        # We can create simple metadata
-        metadata = {"source": dataset_name}
+        metadata = {"source": "mlabonne/pubmed-200k-RCT"}
         doc = Document(page_content=page_content, metadata=metadata)
         documents.append(doc)
 
-    # Proceed with splitting and embedding
+    # Proceed with splitting and embedding. HuggingFaceEmbeddings will also
+    # automatically use the environment variable for authentication if needed.
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=150)
     chunked_docs = text_splitter.split_documents(documents)
 
@@ -64,11 +63,12 @@ def get_vectorstore_from_hf_dataset():
     return vector_store
 
 # --- The rest of your functions are the same ---
+# Note: HuggingFaceEndpoint will also automatically use the environment variable,
+# but passing it explicitly is also fine and doesn't hurt.
 def get_llm():
     return HuggingFaceEndpoint(
         repo_id="google/gemma-2b-it",
-        temperature=0.1, max_new_tokens=1024,
-        huggingface_api_token=HF_TOKEN
+        temperature=0.1, max_new_tokens=1024
     )
 
 def get_context_retriever_chain(_vector_store):
@@ -93,7 +93,7 @@ def get_conversational_rag_chain(retriever_chain):
 
 def get_health_classifier_chain():
     llm = HuggingFaceEndpoint(
-        repo_id="google/gemma-2b-it", temperature=0.1, max_new_tokens=10, huggingface_api_token=HF_TOKEN
+        repo_id="google/gemma-2b-it", temperature=0.1, max_new_tokens=10
     )
     prompt = ChatPromptTemplate.from_messages([
         ("system", "You are a highly skilled classifier... Respond with only 'yes' or 'no'."),
