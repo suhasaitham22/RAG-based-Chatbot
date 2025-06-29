@@ -2,8 +2,9 @@
 
 import streamlit as st
 from langchain_core.messages import AIMessage, HumanMessage
-# --- NEW: Import Hugging Face Dataset Loader ---
-from langchain_community.document_loaders import HuggingFaceDatasetLoader
+# --- NEW: Import the 'datasets' library and LangChain's Document class ---
+from datasets import load_dataset
+from langchain_core.documents import Document
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import FAISS
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
@@ -13,7 +14,6 @@ from langchain_huggingface import HuggingFaceEndpoint, HuggingFaceEmbeddings
 
 # --- App Configuration ---
 st.set_page_config(page_title="Factful Health Chatbot", page_icon="🤖", layout="wide")
-
 st.title("🤖 Factful Health Chatbot")
 st.markdown("""
 This chatbot is powered by a cloud-hosted, open-source LLM and provides answers based on data
@@ -31,32 +31,36 @@ except (KeyError, FileNotFoundError):
 
 
 # --- Core Functions (with Caching) ---
-# --- THIS FUNCTION IS COMPLETELY REWRITTEN FOR RELIABILITY ---
+# --- THIS FUNCTION IS CORRECTED TO FIX THE TypeError ---
 @st.cache_resource(show_spinner="Loading Data From Open-Source Medical Pool...")
 def get_vectorstore_from_hf_dataset():
     """
-    Loads data from the 'ncbi/pubmed' dataset on Hugging Face, splits it,
-    creates embeddings, and stores it in a FAISS vector store.
+    Loads a slice of the 'ncbi/pubmed' dataset directly using the 'datasets' library,
+    converts it to LangChain Documents, splits, embeds, and stores it in FAISS.
     """
-    # Define the dataset name and the column containing the text
-    dataset_name = "ncbi/pubmed"
-    page_content_column = "article_text" 
-    
-    # Create a loader for the dataset. We'll load the first 200 rows for speed.
-    # You can increase this number for a more comprehensive knowledge base.
-    loader = HuggingFaceDatasetLoader(dataset_name, page_content_column, split="train[:200]")
-    
-    # Load the documents
-    documents = loader.load()
+    # Load the first 200 rows of the 'train' split directly. This is the correct way.
+    dataset = load_dataset("ncbi/pubmed", split="train[:200]")
 
-    # Split documents into chunks
+    # Manually create LangChain Document objects, including metadata
+    documents = []
+    for entry in dataset:
+        # The main text content
+        page_content = entry.get("article_text", "")
+        # Other columns become metadata, which is great for context
+        metadata = {
+            "pmid": entry.get("pmid", ""),
+            "journal": entry.get("journal", "")
+        }
+        doc = Document(page_content=page_content, metadata=metadata)
+        documents.append(doc)
+
+    # Now, proceed as before with the list of Document objects
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=150)
     chunked_docs = text_splitter.split_documents(documents)
 
     # Create embeddings
     embeddings = HuggingFaceEmbeddings(
-        model_name="sentence-transformers/all-MiniLM-L6-v2",
-        huggingfacehub_api_token=HF_TOKEN,
+        model_name="sentence-transformers/all-MiniLM-L6-v2"
     )
 
     # Create the vector store
@@ -77,7 +81,7 @@ def get_context_retriever_chain(_vector_store):
     prompt = ChatPromptTemplate.from_messages([
         MessagesPlaceholder(variable_name="chat_history"),
         ("user", "{input}"),
-        ("user", "Given the above conversation, generate a search query to look up in order to get information relevant to the conversation")
+        ("user", "Given the above conversation, generate a search query...")
     ])
     return create_history_aware_retriever(llm, retriever, prompt)
 
@@ -102,7 +106,6 @@ def get_health_classifier_chain():
     return prompt | llm
 
 # --- Main Application Logic ---
-# --- CHANGED: Call the new, reliable dataset function ---
 vector_store = get_vectorstore_from_hf_dataset()
 
 health_classifier_chain = get_health_classifier_chain()
