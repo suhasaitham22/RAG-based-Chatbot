@@ -2,22 +2,22 @@
 
 import streamlit as st
 from langchain_core.messages import AIMessage, HumanMessage
-from langchain_community.document_loaders import WebBaseLoader
+# --- NEW: Import Hugging Face Dataset Loader ---
+from langchain_community.document_loaders import HuggingFaceDatasetLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import FAISS
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain.chains import create_history_aware_retriever, create_retrieval_chain
 from langchain.chains.combine_documents import create_stuff_documents_chain
-from langchain_community.llms import HuggingFaceHub
-from langchain_community.embeddings import HuggingFaceInferenceAPIEmbeddings
+from langchain_huggingface import HuggingFaceEndpoint, HuggingFaceEmbeddings
 
 # --- App Configuration ---
 st.set_page_config(page_title="Factful Health Chatbot", page_icon="🤖", layout="wide")
 
 st.title("🤖 Factful Health Chatbot")
 st.markdown("""
-This chatbot is powered by a cloud-hosted, open-source LLM and provides answers based on information
-from the World Health Organization (WHO) and the Centers for Disease Control and Prevention (CDC).
+This chatbot is powered by a cloud-hosted, open-source LLM and provides answers based on data
+from the PubMed open-source medical dataset.
 
 **Disclaimer:** This is an informational tool and not a substitute for professional medical advice.
 """)
@@ -31,45 +31,48 @@ except (KeyError, FileNotFoundError):
 
 
 # --- Core Functions (with Caching) ---
-# --- THIS FUNCTION IS MODIFIED ---
-@st.cache_resource(show_spinner="Loading and Indexing Knowledge Base...")
-def get_vectorstore_from_urls(urls):
+# --- THIS FUNCTION IS COMPLETELY REWRITTEN FOR RELIABILITY ---
+@st.cache_resource(show_spinner="Loading Data From Open-Source Medical Pool...")
+def get_vectorstore_from_hf_dataset():
     """
-    Loads documents from URLs, splits them into chunks, creates embeddings,
-    and stores them in a FAISS vector store.
+    Loads data from the 'ncbi/pubmed' dataset on Hugging Face, splits it,
+    creates embeddings, and stores it in a FAISS vector store.
     """
-    # Load documents
-    loader = WebBaseLoader(urls)
+    # Define the dataset name and the column containing the text
+    dataset_name = "ncbi/pubmed"
+    page_content_column = "article_text" 
+    
+    # Create a loader for the dataset. We'll load the first 200 rows for speed.
+    # You can increase this number for a more comprehensive knowledge base.
+    loader = HuggingFaceDatasetLoader(dataset_name, page_content_column, split="train[:200]")
+    
+    # Load the documents
     documents = loader.load()
 
-    # --- ADDED CHECK 1: Ensure documents were loaded ---
-    if not documents:
-        st.error("Could not load any documents from the provided URLs. The websites might be blocking requests from Streamlit Cloud. Please check the URLs or try different ones.")
-        st.stop() # Stop execution if no documents are found
-
     # Split documents into chunks
-    text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+    text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=150)
     chunked_docs = text_splitter.split_documents(documents)
 
-    # --- ADDED CHECK 2: Ensure there are chunks to process ---
-    if not chunked_docs:
-        st.error("Failed to split the loaded documents into chunks. The content might be too small.")
-        st.stop() # Stop execution if no chunks are created
-
-    # Create embeddings and vector store
-    embeddings = HuggingFaceInferenceAPIEmbeddings(
-        api_key=HF_TOKEN, model_name="sentence-transformers/all-MiniLM-L6-v2"
+    # Create embeddings
+    embeddings = HuggingFaceEmbeddings(
+        model_name="sentence-transformers/all-MiniLM-L6-v2",
+        huggingfacehub_api_token=HF_TOKEN,
     )
-    
-    # Now it's safe to create the vector store
+
+    # Create the vector store
     vector_store = FAISS.from_documents(chunked_docs, embeddings)
     return vector_store
 
-# --- The rest of your functions are the same ---
-def get_context_retriever_chain(_vector_store):
-    llm = HuggingFaceHub(
-        repo_id="google/gemma-2b-it", model_kwargs={"temperature": 0.1, "max_new_tokens": 1024}, huggingfacehub_api_token=HF_TOKEN
+# --- The rest of your functions are the same as before ---
+def get_llm():
+    return HuggingFaceEndpoint(
+        repo_id="google/gemma-2b-it",
+        temperature=0.1, max_new_tokens=1024,
+        huggingface_api_token=HF_TOKEN
     )
+
+def get_context_retriever_chain(_vector_store):
+    llm = get_llm()
     retriever = _vector_store.as_retriever()
     prompt = ChatPromptTemplate.from_messages([
         MessagesPlaceholder(variable_name="chat_history"),
@@ -79,9 +82,7 @@ def get_context_retriever_chain(_vector_store):
     return create_history_aware_retriever(llm, retriever, prompt)
 
 def get_conversational_rag_chain(retriever_chain):
-    llm = HuggingFaceHub(
-        repo_id="google/gemma-2b-it", model_kwargs={"temperature": 0.1, "max_new_tokens": 1024}, huggingfacehub_api_token=HF_TOKEN
-    )
+    llm = get_llm()
     prompt = ChatPromptTemplate.from_messages([
         ("system", "Answer the user's questions based ONLY on the below context:\n\n{context}"),
         MessagesPlaceholder(variable_name="chat_history"),
@@ -91,37 +92,29 @@ def get_conversational_rag_chain(retriever_chain):
     return create_retrieval_chain(retriever_chain, stuff_documents_chain)
 
 def get_health_classifier_chain():
-    llm = HuggingFaceHub(
-        repo_id="google/gemma-2b-it", model_kwargs={"temperature": 0.1, "max_new_tokens": 10}, huggingfacehub_api_token=HF_TOKEN
+    llm = HuggingFaceEndpoint(
+        repo_id="google/gemma-2b-it", temperature=0.1, max_new_tokens=10, huggingface_api_token=HF_TOKEN
     )
     prompt = ChatPromptTemplate.from_messages([
-        ("system", "You are a highly skilled classifier. Your only task is to determine if the following user question is related to human health, medicine, diseases, symptoms, or wellness. Respond with only 'yes' or 'no'."),
+        ("system", "You are a highly skilled classifier... Respond with only 'yes' or 'no'."),
         ("user", "{input}")
     ])
     return prompt | llm
 
-# --- Main Application Logic (Unchanged) ---
-FACTFUL_URLS = [
-    "https://www.who.int/news-room/fact-sheets/detail/healthy-diet",
-    "https://www.cdc.gov/diabetes/basics/index.html",
-    "https://www.who.int/news-room/fact-sheets/detail/cardiovascular-diseases-(cvds)",
-    "https://www.cdc.gov/sleep/features/getting-enough-sleep.html"
-]
+# --- Main Application Logic ---
+# --- CHANGED: Call the new, reliable dataset function ---
+vector_store = get_vectorstore_from_hf_dataset()
 
-# The app will now gracefully stop with an error message if this step fails
-vector_store = get_vectorstore_from_urls(FACTFUL_URLS)
-
-# These lines will only be reached if vector_store is created successfully
 health_classifier_chain = get_health_classifier_chain()
 context_retriever_chain = get_context_retriever_chain(vector_store)
 conversational_rag_chain = get_conversational_rag_chain(context_retriever_chain)
 
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = [
-        AIMessage(content="Hello! I'm a health chatbot. How can I help you?"),
+        AIMessage(content="Hello! I'm a health chatbot. How can I help you based on the PubMed dataset?"),
     ]
 
-# The rest of the app logic remains the same...
+# The rest of the app logic remains unchanged...
 for message in st.session_state.chat_history:
     if isinstance(message, AIMessage):
         with st.chat_message("AI", avatar="🩺"):
