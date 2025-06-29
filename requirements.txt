@@ -7,3 +7,8 @@ bs4
 faiss-cpu
 huggingface-hub
 sentence-transformers
+pandas
+textblob
+textstat
+scikit-learn
+plotly
