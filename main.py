@@ -13,8 +13,8 @@ from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain_huggingface import HuggingFaceEndpoint, HuggingFaceEmbeddings
 
 # --- App Configuration ---
-st.set_page_config(page_title="Factful Health Chatbot", page_icon="🤖", layout="wide")
-st.title("🤖 Factful Health Chatbot")
+st.set_page_config(page_title="Health Chatbot", page_icon="🤖", layout="wide")
+st.title("🤖Health Chatbot")
 st.markdown("""
 This chatbot is powered by a cloud-hosted, open-source LLM and provides answers based on data
 from a cloud-native PubMed dataset.
@@ -42,7 +42,7 @@ def get_vectorstore_from_hf_dataset():
     dataset_name = "armanc/pubmed-rct20k"
 
     # Load the dataset (we can use the full train split, it's not too large)
-    dataset = load_dataset(dataset_name, split="train")
+    dataset = load_dataset(dataset_name, split="train[:1000]")
 
     # Manually create LangChain Document objects
     documents = []
