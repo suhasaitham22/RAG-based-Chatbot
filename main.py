@@ -12,18 +12,17 @@ from langchain_community.llms import HuggingFaceHub
 from langchain_community.embeddings import HuggingFaceInferenceAPIEmbeddings
 
 # --- App Configuration ---
-# This should be the first Streamlit command in your app
 st.set_page_config(page_title="Factful Health Chatbot", page_icon="🤖", layout="wide")
 
 st.title("🤖 Factful Health Chatbot")
 st.markdown("""
-This chatbot is powered by a cloud-hosted, open-source LLM and provides answers based on information 
+This chatbot is powered by a cloud-hosted, open-source LLM and provides answers based on information
 from the World Health Organization (WHO) and the Centers for Disease Control and Prevention (CDC).
 
 **Disclaimer:** This is an informational tool and not a substitute for professional medical advice.
 """)
 
-# --- Load API Key from Streamlit Secrets ---
+# --- Load API Key ---
 try:
     HF_TOKEN = st.secrets["HUGGINGFACEHUB_API_TOKEN"]
 except (KeyError, FileNotFoundError):
@@ -32,17 +31,41 @@ except (KeyError, FileNotFoundError):
 
 
 # --- Core Functions (with Caching) ---
+# --- THIS FUNCTION IS MODIFIED ---
 @st.cache_resource(show_spinner="Loading and Indexing Knowledge Base...")
 def get_vectorstore_from_urls(urls):
+    """
+    Loads documents from URLs, splits them into chunks, creates embeddings,
+    and stores them in a FAISS vector store.
+    """
+    # Load documents
     loader = WebBaseLoader(urls)
     documents = loader.load()
+
+    # --- ADDED CHECK 1: Ensure documents were loaded ---
+    if not documents:
+        st.error("Could not load any documents from the provided URLs. The websites might be blocking requests from Streamlit Cloud. Please check the URLs or try different ones.")
+        st.stop() # Stop execution if no documents are found
+
+    # Split documents into chunks
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
     chunked_docs = text_splitter.split_documents(documents)
+
+    # --- ADDED CHECK 2: Ensure there are chunks to process ---
+    if not chunked_docs:
+        st.error("Failed to split the loaded documents into chunks. The content might be too small.")
+        st.stop() # Stop execution if no chunks are created
+
+    # Create embeddings and vector store
     embeddings = HuggingFaceInferenceAPIEmbeddings(
         api_key=HF_TOKEN, model_name="sentence-transformers/all-MiniLM-L6-v2"
     )
-    return FAISS.from_documents(chunked_docs, embeddings)
+    
+    # Now it's safe to create the vector store
+    vector_store = FAISS.from_documents(chunked_docs, embeddings)
+    return vector_store
 
+# --- The rest of your functions are the same ---
 def get_context_retriever_chain(_vector_store):
     llm = HuggingFaceHub(
         repo_id="google/gemma-2b-it", model_kwargs={"temperature": 0.1, "max_new_tokens": 1024}, huggingfacehub_api_token=HF_TOKEN
@@ -77,7 +100,7 @@ def get_health_classifier_chain():
     ])
     return prompt | llm
 
-# --- Main Application Logic ---
+# --- Main Application Logic (Unchanged) ---
 FACTFUL_URLS = [
     "https://www.who.int/news-room/fact-sheets/detail/healthy-diet",
     "https://www.cdc.gov/diabetes/basics/index.html",
@@ -85,7 +108,10 @@ FACTFUL_URLS = [
     "https://www.cdc.gov/sleep/features/getting-enough-sleep.html"
 ]
 
+# The app will now gracefully stop with an error message if this step fails
 vector_store = get_vectorstore_from_urls(FACTFUL_URLS)
+
+# These lines will only be reached if vector_store is created successfully
 health_classifier_chain = get_health_classifier_chain()
 context_retriever_chain = get_context_retriever_chain(vector_store)
 conversational_rag_chain = get_conversational_rag_chain(context_retriever_chain)
@@ -95,7 +121,7 @@ if "chat_history" not in st.session_state:
         AIMessage(content="Hello! I'm a health chatbot. How can I help you?"),
     ]
 
-# Display chat history
+# The rest of the app logic remains the same...
 for message in st.session_state.chat_history:
     if isinstance(message, AIMessage):
         with st.chat_message("AI", avatar="🩺"):
@@ -104,7 +130,6 @@ for message in st.session_state.chat_history:
         with st.chat_message("Human", avatar="👤"):
             st.write(message.content)
 
-# Get user input
 user_query = st.chat_input("Ask a question about health...")
 if user_query is not None and user_query.strip() != "":
     st.session_state.chat_history.append(HumanMessage(content=user_query))
