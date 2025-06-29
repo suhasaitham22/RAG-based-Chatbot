@@ -16,7 +16,7 @@ from langchain_huggingface import HuggingFaceEndpoint, HuggingFaceEmbeddings
 st.set_page_config(page_title="Factful Health Chatbot", page_icon="🤖", layout="wide")
 st.title("🤖 Factful Health Chatbot")
 st.markdown("""
-This chatbot is powered by a cloud-hosted, open-source LLM and provides answers based on data
+This chatbot is powered by the Mixtral model and provides answers based on data
 from a cloud-native PubMed dataset.
 
 **Disclaimer:** This is an informational tool and not a substitute for professional medical advice.
@@ -57,14 +57,14 @@ def get_vectorstore_from_hf_dataset():
     vector_store = FAISS.from_documents(chunked_docs, embeddings)
     return vector_store
 
-# --- Functions with LLM instantiation are now fixed ---
+# --- UPDATED LLM TO A MORE COMPATIBLE MODEL ---
 def get_llm():
-    """Returns an instance of the HuggingFaceEndpoint LLM with the correct task."""
+    """Returns an instance of the HuggingFaceEndpoint LLM using the Mixtral model."""
     return HuggingFaceEndpoint(
-        repo_id="google/gemma-2b-it",
+        repo_id="mistralai/Mixtral-8x7B-Instruct-v0.1",
         temperature=0.1,
-        max_new_tokens=1024,
-        task="conversational"  # <-- THIS IS THE FIX
+        max_new_tokens=1024
+        # We REMOVE task="conversational" as this model works with the default task
     )
 
 def get_context_retriever_chain(_vector_store):
@@ -88,12 +88,11 @@ def get_conversational_rag_chain(retriever_chain):
     return create_retrieval_chain(retriever_chain, stuff_documents_chain)
 
 def get_health_classifier_chain():
-    """Creates the classifier chain with the correct task for the LLM."""
+    """Creates the classifier chain with the compatible Mixtral model."""
     llm = HuggingFaceEndpoint(
-        repo_id="google/gemma-2b-it",
+        repo_id="mistralai/Mixtral-8x7B-Instruct-v0.1",
         temperature=0.1,
-        max_new_tokens=10,
-        task="conversational"  # <-- THIS IS THE FIX
+        max_new_tokens=10
     )
     prompt = ChatPromptTemplate.from_messages([
         ("system", "You are a highly skilled classifier... Respond with only 'yes' or 'no'."),
