@@ -11,14 +11,14 @@ from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain.chains import create_history_aware_retriever, create_retrieval_chain
 from langchain.chains.combine_documents import create_stuff_documents_chain
 
-# --- THIS IS THE CRITICAL CHANGE: IMPORT THE CORRECT CLASS ---
-from langchain_huggingface import ChatHuggingFace, HuggingFaceEmbeddings
+# --- We need BOTH classes for the correct composition pattern ---
+from langchain_huggingface import ChatHuggingFace, HuggingFaceEndpoint, HuggingFaceEmbeddings
 
 # --- App Configuration ---
 st.set_page_config(page_title="Factful Health Chatbot", page_icon="🤖", layout="wide")
 st.title("🤖 Factful Health Chatbot")
 st.markdown("""
-This chatbot is powered by Google's Gemma model and provides answers based on data
+This chatbot is powered by the Mixtral model and provides answers based on data
 from a cloud-native PubMed dataset.
 
 **Disclaimer:** This is an informational tool and not a substitute for professional medical advice.
@@ -59,14 +59,22 @@ def get_vectorstore_from_hf_dataset():
     vector_store = FAISS.from_documents(chunked_docs, embeddings)
     return vector_store
 
-# --- UPDATED LLM TO USE THE CORRECT ChatHuggingFace CLASS ---
-def get_llm():
-    """Returns an instance of the ChatHuggingFace model."""
-    return ChatHuggingFace(
-        repo_id="google/gemma-2b-it",
+# --- THIS IS THE FINAL, CORRECT WAY TO CREATE THE CHAT MODEL ---
+def get_llm(max_tokens=1024):
+    """
+    Creates the Hugging Face endpoint and wraps it in the ChatHuggingFace adapter.
+    """
+    # 1. Create the low-level API endpoint connection
+    endpoint = HuggingFaceEndpoint(
+        repo_id="mistralai/Mixtral-8x7B-Instruct-v0.1",
         temperature=0.1,
-        max_new_tokens=1024
+        max_new_tokens=max_tokens
     )
+    
+    # 2. Wrap the endpoint in the ChatHuggingFace adapter
+    chat_model = ChatHuggingFace(llm=endpoint)
+    
+    return chat_model
 
 def get_context_retriever_chain(_vector_store):
     llm = get_llm()
@@ -89,12 +97,10 @@ def get_conversational_rag_chain(retriever_chain):
     return create_retrieval_chain(retriever_chain, stuff_documents_chain)
 
 def get_health_classifier_chain():
-    """Creates the classifier chain with the correct ChatHuggingFace class."""
-    llm = ChatHuggingFace(
-        repo_id="google/gemma-2b-it",
-        temperature=0.1,
-        max_new_tokens=10
-    )
+    """Creates the classifier chain with the correctly instantiated model."""
+    # Use the same pattern, but with fewer tokens for a simple yes/no answer
+    llm = get_llm(max_tokens=10)
+    
     prompt = ChatPromptTemplate.from_messages([
         ("system", "You are a highly skilled classifier... Respond with only 'yes' or 'no'."),
         ("user", "{input}")
